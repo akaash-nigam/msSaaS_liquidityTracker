@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import GLIHeroCard from '@/components/GLIHeroCard';
 import GLIChart from '@/components/GLIChart';
 import ComponentBreakdown from '@/components/ComponentBreakdown';
+import LearnMoreModal from '@/components/LearnMoreModal';
 
 export default function Home() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [isLearnMoreOpen, setIsLearnMoreOpen] = useState(false);
 
   useEffect(() => {
     // Simulate initial load
@@ -35,10 +39,16 @@ export default function Home() {
               <p className="text-sm text-gray-400 mt-1">Real-time monitoring of the $176T liquidity cycle</p>
             </div>
             <div className="flex gap-4">
-              <button className="px-4 py-2 text-sm text-white hover:bg-white/10 rounded-lg transition">
+              <button
+                onClick={() => setIsLearnMoreOpen(true)}
+                className="px-4 py-2 text-sm text-white hover:bg-white/10 rounded-lg transition"
+              >
                 Learn More
               </button>
-              <button className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-blue-600 transition">
+              <button
+                onClick={() => router.push('/auth')}
+                className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-blue-600 transition"
+              >
                 Sign In
               </button>
             </div>
@@ -69,6 +79,9 @@ export default function Home() {
           <p className="mt-2">Based on research by Michael J. Howell - "Capital Wars: The Rise of Global Liquidity"</p>
         </div>
       </div>
+
+      {/* Learn More Modal */}
+      <LearnMoreModal isOpen={isLearnMoreOpen} onClose={() => setIsLearnMoreOpen(false)} />
     </main>
   );
 }
