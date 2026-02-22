@@ -21,6 +21,9 @@ import ExchangeRatesTable from "@/components/ExchangeRatesTable";
 import CapitalFlowsCard from "@/components/CapitalFlowsCard";
 import MarketIndicatorsCard from "@/components/MarketIndicatorsCard";
 import AssetCorrelationsCard from "@/components/AssetCorrelationsCard";
+import ValuationHeatmapCard from "@/components/ValuationHeatmapCard";
+import LiquidityFlowCard from "@/components/LiquidityFlowCard";
+import HistoricalComparisonCard from "@/components/HistoricalComparisonCard";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -160,6 +163,14 @@ export default function Home() {
         {/* Capital Flows */}
         <SectionHeader title="Capital Flows" />
         <CapitalFlowsCard />
+
+        {/* Liquidity Destination */}
+        <SectionHeader title="Liquidity Destination" />
+        <ValuationHeatmapCard />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <LiquidityFlowCard />
+          <HistoricalComparisonCard />
+        </div>
 
         {/* Market Indicators */}
         <SectionHeader title="Market Indicators" />

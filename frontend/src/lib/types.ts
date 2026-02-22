@@ -111,3 +111,56 @@ export interface AssetCorrelationData {
   correlation_365d: number;
   beta_to_gli: number;
 }
+
+export interface ValuationData {
+  country: string;
+  country_code: string;
+  ratio: number;
+  gdp_usd: number;
+  mcap_usd: number;
+  gdp_share?: number;
+  mcap_share?: number;
+  signal: string;
+  date: string;
+}
+
+export interface LiquidityFlowRegion {
+  region: string;
+  flow_type: string;
+  amount: number;
+  share_pct: number;
+  change_pct: number;
+  direction: string;
+}
+
+export interface LiquidityFlowData {
+  date: string;
+  total_global_flows: number;
+  flows: LiquidityFlowRegion[];
+  dm_vs_em: {
+    dm_share: number;
+    em_share: number;
+    dm_to_em_trend: string;
+  };
+}
+
+export interface HistoricalComparisonPoint {
+  year: number;
+  ratio: number;
+}
+
+export interface HistoricalComparisonData {
+  japan: HistoricalComparisonPoint[];
+  us: HistoricalComparisonPoint[];
+  peak_comparison: {
+    japan_peak_year: number;
+    japan_peak_ratio: number;
+    japan_gdp_share_at_peak?: number;
+    japan_mcap_share_at_peak?: number;
+    us_current_year: number;
+    us_current_ratio: number;
+    us_gdp_share?: number;
+    us_mcap_share?: number;
+    warning: string;
+  };
+}

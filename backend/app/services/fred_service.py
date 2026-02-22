@@ -137,6 +137,27 @@ class FREDService:
         "CBBTCUSD": {"series_id": "CBBTCUSD", "name": "Bitcoin", "asset_class": "crypto", "ticker": "BTC"},
     }
 
+    # Buffett Indicator (Market Cap to GDP) series - World Bank via FRED (Phase 5)
+    BUFFETT_INDICATOR_SERIES = {
+        "USA": {"series_id": "DDDM01USA156NWDB", "name": "United States"},
+        "JPA": {"series_id": "DDDM01JPA156NWDB", "name": "Japan"},
+        "CNA": {"series_id": "DDDM01CNA156NWDB", "name": "China"},
+        "GBA": {"series_id": "DDDM01GBA156NWDB", "name": "United Kingdom"},
+        "DEA": {"series_id": "DDDM01DEA156NWDB", "name": "Germany"},
+        "FRA": {"series_id": "DDDM01FRA156NWDB", "name": "France"},
+        "CAA": {"series_id": "DDDM01CAA156NWDB", "name": "Canada"},
+        "INA": {"series_id": "DDDM01INA156NWDB", "name": "India"},
+        "KRA": {"series_id": "DDDM01KRA156NWDB", "name": "South Korea"},
+        "BRA": {"series_id": "DDDM01BRA156NWDB", "name": "Brazil"},
+    }
+
+    # GDP series for reference
+    GDP_SERIES = {
+        "USA": {"series_id": "GDP", "name": "US Nominal GDP"},
+        "WORLD": {"series_id": "NYGDPMKTPCDWLD", "name": "World GDP"},
+        "JPA": {"series_id": "JPNNGDP", "name": "Japan GDP"},
+    }
+
     def __init__(self):
         self.api_key = settings.FRED_API_KEY
         self.use_mock = settings.USE_MOCK_DATA or self.api_key == "demo"
@@ -289,6 +310,21 @@ class FREDService:
             "SP500": 5820,
             "GOLDAMGBD228NLBM": 2950,
             "CBBTCUSD": 95000,
+            # Buffett Indicator (Market Cap / GDP as percentage)
+            "DDDM01USA156NWDB": 209.0,
+            "DDDM01JPA156NWDB": 148.0,
+            "DDDM01CNA156NWDB": 65.0,
+            "DDDM01GBA156NWDB": 105.0,
+            "DDDM01DEA156NWDB": 52.0,
+            "DDDM01FRA156NWDB": 85.0,
+            "DDDM01CAA156NWDB": 140.0,
+            "DDDM01INA156NWDB": 112.0,
+            "DDDM01KRA156NWDB": 95.0,
+            "DDDM01BRA156NWDB": 45.0,
+            # GDP (billions)
+            "GDP": 28_300,
+            "NYGDPMKTPCDWLD": 105_000,
+            "JPNNGDP": 4_200,
         }
         base = base_values.get(series_id, 1000)
 
