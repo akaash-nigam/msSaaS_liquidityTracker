@@ -198,3 +198,73 @@ export interface DataFreshness {
   capital_flows: string | null;
   valuations: string | null;
 }
+
+// Phase C: Cycle-Based Asset Allocation
+export interface CycleAllocation {
+  asset_class: string;
+  weight: number;
+  rationale: string;
+  color: string;
+}
+
+export interface CycleAllocationData {
+  cycle_position: string;
+  momentum: number;
+  allocations: CycleAllocation[];
+}
+
+// Phase D: Stablecoin Supply
+export interface StablecoinData {
+  total_supply: number;
+  usdt: { supply: number; change_7d: number; dominance: number };
+  usdc: { supply: number; change_7d: number; dominance: number };
+  historical: { date: string; usdt: number; usdc: number; total: number }[];
+}
+
+// Phase E: World Map
+export interface WorldMapCountry {
+  country_code: string;
+  country: string;
+  cb_assets_usd: number;
+  buffett_ratio: number | null;
+  signal: string;
+  liquidity_contribution_pct: number;
+}
+
+// Phase F: Correlation Matrix
+export interface CorrelationMatrix {
+  labels: string[];
+  matrix: number[][];
+}
+
+// Phase G: Sankey Diagram
+export interface SankeyNode {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface SankeyLink {
+  source: string;
+  target: string;
+  value: number;
+}
+
+export interface SankeyData {
+  nodes: SankeyNode[];
+  links: SankeyLink[];
+}
+
+// Phase H: Multi-Timeframe
+export interface TimeframePanel {
+  timeframe: string;
+  gli_data: { date: string; value: number }[];
+  change_pct: number;
+  high: number;
+  low: number;
+  current: number;
+}
+
+export interface MultiTimeframeData {
+  panels: TimeframePanel[];
+}
