@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 from app.database import engine, Base, init_db
 from app.models import CentralBankData, GlobalLiquidityIndex
