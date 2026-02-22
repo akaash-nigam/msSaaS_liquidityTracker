@@ -37,12 +37,12 @@ def _cycle_position(change_1m: float) -> str:
 def _mock_gli_current() -> dict:
     return {
         "date": date.today().isoformat(),
-        "value": 78.4,
+        "value": 85.2,
         "change_pct": 0.12,
         "change_1m_pct": 1.34,
         "cycle_position": "expansion",
-        "num_sources": 7,
-        "cb_value": 25.9,
+        "num_sources": 8,
+        "cb_value": 32.7,
         "ps_value": 52.5,
     }
 
@@ -61,13 +61,14 @@ def _mock_gli_historical(days: int) -> list:
 
 def _mock_gli_components() -> list:
     return [
-        {"source": "FED", "value": 7.5, "currency": "USD", "value_usd": 7.5, "pct_of_total": 29.0},
-        {"source": "ECB", "value": 6.8, "currency": "EUR", "value_usd": 7.34, "pct_of_total": 28.4},
-        {"source": "BOJ", "value": 750, "currency": "JPY", "value_usd": 5.0, "pct_of_total": 19.3},
-        {"source": "BOE", "value": 0.85, "currency": "GBP", "value_usd": 1.08, "pct_of_total": 4.2},
-        {"source": "SNB", "value": 0.8, "currency": "CHF", "value_usd": 0.90, "pct_of_total": 3.5},
-        {"source": "BOC", "value": 0.4, "currency": "CAD", "value_usd": 0.29, "pct_of_total": 1.1},
-        {"source": "RBA", "value": 0.55, "currency": "AUD", "value_usd": 0.36, "pct_of_total": 1.4},
+        {"source": "FED", "value": 7.5, "currency": "USD", "value_usd": 7.5, "pct_of_total": 22.9},
+        {"source": "ECB", "value": 6.8, "currency": "EUR", "value_usd": 7.34, "pct_of_total": 22.4},
+        {"source": "PBOC", "value": 49.3, "currency": "CNY", "value_usd": 6.80, "pct_of_total": 20.8},
+        {"source": "BOJ", "value": 750, "currency": "JPY", "value_usd": 5.0, "pct_of_total": 15.3},
+        {"source": "BOE", "value": 0.85, "currency": "GBP", "value_usd": 1.08, "pct_of_total": 3.3},
+        {"source": "SNB", "value": 0.8, "currency": "CHF", "value_usd": 0.90, "pct_of_total": 2.8},
+        {"source": "RBA", "value": 0.55, "currency": "AUD", "value_usd": 0.36, "pct_of_total": 1.1},
+        {"source": "BOC", "value": 0.4, "currency": "CAD", "value_usd": 0.29, "pct_of_total": 0.9},
     ]
 
 
@@ -328,7 +329,7 @@ def get_gli_current(db: Session = Depends(get_db)):
                 "change_pct": round(change_pct, 2),
                 "change_1m_pct": round(change_1m, 2),
                 "cycle_position": _cycle_position(change_1m),
-                "num_sources": 7,
+                "num_sources": 8,
                 "cb_value": round(float(enhanced.central_bank_liquidity), 2),
                 "ps_value": round(float(enhanced.private_sector_liquidity), 2),
             }
@@ -1003,3 +1004,231 @@ def get_asset_correlations(db: Session = Depends(get_db)):
     except Exception:
         pass
     return _mock_asset_correlations()
+
+
+# ---------------------------------------------------------------------------
+# Fed RRP Facility Endpoint (Phase 6A)
+# ---------------------------------------------------------------------------
+
+def _mock_fed_rrp() -> dict:
+    import random
+    random.seed(55)
+    history = []
+    val = 500.0
+    current = date.today() - timedelta(days=90)
+    while current <= date.today():
+        if current.weekday() < 5:
+            val = max(50, val + random.uniform(-20, 10))
+            history.append({"date": current.isoformat(), "value": round(val, 1)})
+        current += timedelta(days=1)
+    return {
+        "date": date.today().isoformat(),
+        "current_level_billions": round(val, 1),
+        "peak_level_billions": 2554.0,
+        "drawdown_pct": round((val - 2554) / 2554 * 100, 1),
+        "signal": "bullish",
+        "historical": history,
+        "last_updated": date.today().isoformat(),
+    }
+
+
+@router.get("/fed-rrp/current")
+def get_fed_rrp_current(db: Session = Depends(get_db)):
+    """Current Fed RRP facility level + recent history."""
+    try:
+        from app.models.market_indicators import MarketIndicator
+
+        # Get latest RRP observation
+        latest = (
+            db.query(MarketIndicator)
+            .filter(MarketIndicator.series_id == "RRPONTSYD")
+            .order_by(MarketIndicator.date.desc())
+            .first()
+        )
+
+        if not latest:
+            return _mock_fed_rrp()
+
+        # Get historical for chart (last 90 days)
+        cutoff = date.today() - timedelta(days=90)
+        history = (
+            db.query(MarketIndicator)
+            .filter(
+                MarketIndicator.series_id == "RRPONTSYD",
+                MarketIndicator.date >= cutoff,
+            )
+            .order_by(MarketIndicator.date)
+            .all()
+        )
+
+        # Peak from all available data
+        from sqlalchemy import func
+        peak_row = (
+            db.query(func.max(MarketIndicator.value))
+            .filter(MarketIndicator.series_id == "RRPONTSYD")
+            .scalar()
+        )
+        peak = float(peak_row) if peak_row else float(latest.value)
+        current_val = float(latest.value)
+        drawdown_pct = round((current_val - peak) / peak * 100, 1) if peak > 0 else 0
+
+        return {
+            "date": latest.date.isoformat(),
+            "current_level_billions": round(current_val / 1000, 1),
+            "peak_level_billions": round(peak / 1000, 1),
+            "drawdown_pct": drawdown_pct,
+            "signal": "bullish" if current_val < peak * 0.5 else "neutral",
+            "historical": [
+                {"date": r.date.isoformat(), "value": round(float(r.value) / 1000, 1)}
+                for r in history
+            ],
+            "last_updated": latest.date.isoformat(),
+        }
+    except Exception:
+        return _mock_fed_rrp()
+
+
+# ---------------------------------------------------------------------------
+# Fed Balance Sheet Decomposition Endpoint (Phase 6D)
+# ---------------------------------------------------------------------------
+
+def _mock_fed_balance_sheet(days: int) -> dict:
+    import random
+    random.seed(88)
+    data = []
+    treas, mbs, total = 4200.0, 2200.0, 7500.0
+    current = date.today() - timedelta(days=days)
+    while current <= date.today():
+        if current.weekday() < 5:
+            # Simulate QT: slowly declining
+            treas += random.uniform(-8, 3)
+            mbs += random.uniform(-5, 1)
+            total = treas + mbs + random.uniform(800, 1200)  # "Other" ~$1T
+            data.append({
+                "date": current.isoformat(),
+                "treasuries": round(treas, 1),
+                "mbs": round(mbs, 1),
+                "other": round(total - treas - mbs, 1),
+                "total": round(total, 1),
+            })
+        current += timedelta(days=1)
+    return {
+        "data": data,
+        "latest": data[-1] if data else {},
+        "last_updated": date.today().isoformat(),
+    }
+
+
+@router.get("/fed-balance-sheet/composition")
+def get_fed_balance_sheet_composition(
+    timeframe: str = Query("1Y", regex="^(1M|3M|6M|1Y|2Y|5Y|ALL)$"),
+    db: Session = Depends(get_db),
+):
+    """Fed balance sheet breakdown: Treasuries vs MBS vs Other."""
+    days = TIMEFRAME_DAYS.get(timeframe, 365)
+    cutoff = date.today() - timedelta(days=days)
+
+    try:
+        from app.models.market_indicators import MarketIndicator
+
+        # Fetch TREAST, WSHOMCB, and WALCL (total from CentralBankData)
+        treast_rows = (
+            db.query(MarketIndicator)
+            .filter(MarketIndicator.series_id == "TREAST", MarketIndicator.date >= cutoff)
+            .order_by(MarketIndicator.date)
+            .all()
+        )
+        mbs_rows = (
+            db.query(MarketIndicator)
+            .filter(MarketIndicator.series_id == "WSHOMCB", MarketIndicator.date >= cutoff)
+            .order_by(MarketIndicator.date)
+            .all()
+        )
+
+        if not treast_rows and not mbs_rows:
+            return _mock_fed_balance_sheet(days)
+
+        # Also get total assets from CentralBankData (FED/WALCL)
+        fed_rows = (
+            db.query(CentralBankData)
+            .filter(
+                CentralBankData.source == "FED",
+                CentralBankData.indicator == "balance_sheet",
+                CentralBankData.date >= cutoff,
+            )
+            .order_by(CentralBankData.date)
+            .all()
+        )
+
+        # Build lookup maps
+        treast_map = {r.date: float(r.value) for r in treast_rows}
+        mbs_map = {r.date: float(r.value) for r in mbs_rows}
+        # CentralBankData stores in trillions, convert back to billions for display
+        fed_map = {r.date: float(r.value) * 1000 for r in fed_rows}
+
+        # Merge on dates where we have at least treasury or mbs data
+        all_dates = sorted(set(treast_map.keys()) | set(mbs_map.keys()))
+        data = []
+        for d in all_dates:
+            t = treast_map.get(d, 0) / 1000  # millions → billions
+            m = mbs_map.get(d, 0) / 1000
+            total = fed_map.get(d, t + m + 1100)  # fallback
+            other = max(0, total - t - m)
+            data.append({
+                "date": d.isoformat(),
+                "treasuries": round(t, 1),
+                "mbs": round(m, 1),
+                "other": round(other, 1),
+                "total": round(total, 1),
+            })
+
+        return {
+            "data": data,
+            "latest": data[-1] if data else {},
+            "last_updated": all_dates[-1].isoformat() if all_dates else None,
+        }
+    except Exception:
+        return _mock_fed_balance_sheet(days)
+
+
+# ---------------------------------------------------------------------------
+# Data Freshness Endpoint (Phase 7C)
+# ---------------------------------------------------------------------------
+
+@router.get("/data/freshness")
+def get_data_freshness(db: Session = Depends(get_db)):
+    """Return last_updated timestamps for all data categories."""
+    from sqlalchemy import func
+
+    def max_date(model, date_col=None):
+        try:
+            col = date_col or model.date
+            result = db.query(func.max(col)).scalar()
+            return result.isoformat() if result else None
+        except Exception:
+            return None
+
+    try:
+        from app.models.market_indicators import MarketIndicator
+        from app.models.asset_prices import AssetPrice
+        from app.models.liquidity_valuation import LiquidityValuation
+
+        return {
+            "gli": max_date(GlobalLiquidityIndex),
+            "private_sector": max_date(PrivateSectorLiquidityIndex),
+            "exchange_rates": max_date(ExchangeRate),
+            "market_indicators": max_date(MarketIndicator),
+            "asset_prices": max_date(AssetPrice),
+            "capital_flows": max_date(USTreasuryTIC, USTreasuryTIC.report_date),
+            "valuations": max_date(LiquidityValuation),
+        }
+    except Exception:
+        return {
+            "gli": None,
+            "private_sector": None,
+            "exchange_rates": None,
+            "market_indicators": None,
+            "asset_prices": None,
+            "capital_flows": None,
+            "valuations": None,
+        }

@@ -164,3 +164,37 @@ export interface HistoricalComparisonData {
     warning: string;
   };
 }
+
+export interface FedRrpData {
+  date: string;
+  current_level_billions: number;
+  peak_level_billions: number;
+  drawdown_pct: number;
+  signal: string;
+  historical: { date: string; value: number }[];
+  last_updated?: string;
+}
+
+export interface FedBalanceSheetPoint {
+  date: string;
+  treasuries: number;
+  mbs: number;
+  other: number;
+  total: number;
+}
+
+export interface FedBalanceSheetData {
+  data: FedBalanceSheetPoint[];
+  latest: FedBalanceSheetPoint;
+  last_updated?: string;
+}
+
+export interface DataFreshness {
+  gli: string | null;
+  private_sector: string | null;
+  exchange_rates: string | null;
+  market_indicators: string | null;
+  asset_prices: string | null;
+  capital_flows: string | null;
+  valuations: string | null;
+}

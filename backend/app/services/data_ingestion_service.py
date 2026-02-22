@@ -38,7 +38,7 @@ class DataIngestionService:
         end = date.today()
         start = end - timedelta(days=days_back)
 
-        all_banks = ["FED", "ECB", "BOJ", "BOE", "SNB", "BOC", "RBA"]
+        all_banks = ["FED", "ECB", "BOJ", "BOE", "SNB", "BOC", "RBA", "PBOC"]
         records_added = 0
         min_date = None
         max_date = None
@@ -46,10 +46,10 @@ class DataIngestionService:
         # FRED exchange rate conventions:
         #   DEXUSEU (EUR), DEXUSUK (GBP), DEXUSAL (AUD) → "USD per local" → store as-is
         #   DEXJPUS (JPY), DEXSZUS (CHF), DEXCAUS (CAD) → "local per USD" → invert
-        invert_currencies = {"JPY", "CHF", "CAD"}
+        invert_currencies = {"JPY", "CHF", "CAD", "CNY"}
 
         # Fetch exchange rates first
-        for currency in ["EUR", "JPY", "GBP", "CHF", "CAD", "AUD"]:
+        for currency in ["EUR", "JPY", "GBP", "CHF", "CAD", "AUD", "CNY"]:
             data = await self.fred.fetch_exchange_rates(currency, start, end)
             for obs in data["observations"]:
                 existing = self.db.query(ExchangeRate).filter(

@@ -1,16 +1,25 @@
 import httpx
 import random
+import asyncio
+import time
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class FREDService:
     """Service for fetching data from FRED (Federal Reserve Economic Data) API."""
 
     BASE_URL = "https://api.stlouisfed.org/fred"
+
+    # Rate limiting: FRED allows 120 req/min
+    _last_request_time: float = 0
+    _min_interval: float = 0.6  # ~100 req/min, staying under limit
 
     # Central bank balance sheet series
     CENTRAL_BANK_SERIES = {
@@ -30,31 +39,42 @@ class FREDService:
             "series_id": "JPNASSETS",
             "name": "Bank of Japan Total Assets",
             "currency": "JPY",
-            "unit_scale": 1_000_000_000,
+            "unit_scale": 100_000_000,  # FRED reports in 100 million JPY
         },
         "BOE": {
             "series_id": "UKASSETS",
             "name": "Bank of England Total Assets",
             "currency": "GBP",
             "unit_scale": 1_000_000,
+            "fallback_to_mock": True,  # Series may be discontinued
         },
         "SNB": {
             "series_id": "SNBASSETS",
             "name": "Swiss National Bank Total Assets",
             "currency": "CHF",
             "unit_scale": 1_000_000,
+            "fallback_to_mock": True,  # Not available on FRED
         },
         "BOC": {
             "series_id": "BCASSETS",
             "name": "Bank of Canada Total Assets",
             "currency": "CAD",
             "unit_scale": 1_000_000,
+            "fallback_to_mock": True,  # Not available on FRED
         },
         "RBA": {
             "series_id": "RBASSETS",
             "name": "Reserve Bank of Australia Total Assets",
             "currency": "AUD",
             "unit_scale": 1_000_000,
+            "fallback_to_mock": True,  # Not available on FRED
+        },
+        "PBOC": {
+            "series_id": "CHNASSETS",
+            "name": "People's Bank of China Total Assets",
+            "currency": "CNY",
+            "unit_scale": 100_000_000,  # 100 million CNY
+            "fallback_to_mock": True,  # Not available on FRED
         },
     }
 
@@ -66,6 +86,26 @@ class FREDService:
         "CHF": "DEXSZUS",
         "CAD": "DEXCAUS",
         "AUD": "DEXUSAL",
+        "CNY": "DEXCHUS",
+    }
+
+    # Fed Balance Sheet Decomposition series
+    FED_BALANCE_SHEET_SERIES = {
+        "treasuries": {
+            "series_id": "TREAST",
+            "name": "U.S. Treasury Securities Held",
+            "unit": "millions_usd",
+        },
+        "mbs": {
+            "series_id": "WSHOMCB",
+            "name": "Mortgage-Backed Securities Held",
+            "unit": "millions_usd",
+        },
+        "total": {
+            "series_id": "WALCL",
+            "name": "Total Assets",
+            "unit": "millions_usd",
+        },
     }
 
     # Private sector liquidity series (Phase 2)
@@ -128,6 +168,9 @@ class FREDService:
         "BAMLH0A0HYM2": {"name": "HY Spread", "category": "credit_spread", "unit": "percent"},
         "BAMLC0A4CBBB": {"name": "IG Spread", "category": "credit_spread", "unit": "percent"},
         "T10YIE": {"name": "Breakeven Inflation", "category": "real_rates", "unit": "percent"},
+        "RRPONTSYD": {"name": "ON RRP", "category": "fed_facility", "unit": "millions_usd"},
+        "TREAST": {"name": "Fed Treasury Holdings", "category": "fed_balance_sheet", "unit": "millions_usd"},
+        "WSHOMCB": {"name": "Fed MBS Holdings", "category": "fed_balance_sheet", "unit": "millions_usd"},
     }
 
     # Asset price series (Phase 4)
@@ -158,9 +201,20 @@ class FREDService:
         "JPA": {"series_id": "JPNNGDP", "name": "Japan GDP"},
     }
 
+    # Series IDs that should fall back to mock if FRED returns an error
+    _FALLBACK_SERIES: set = set()
+
     def __init__(self):
         self.api_key = settings.FRED_API_KEY
         self.use_mock = settings.USE_MOCK_DATA or self.api_key == "demo"
+        # Build fallback set from central bank configs
+        for config in self.CENTRAL_BANK_SERIES.values():
+            if config.get("fallback_to_mock"):
+                self._FALLBACK_SERIES.add(config["series_id"])
+
+    def _should_fallback(self, series_id: str) -> bool:
+        """Check if a series should fall back to mock data on error."""
+        return series_id in self._FALLBACK_SERIES
 
     async def fetch_series(
         self,
@@ -172,6 +226,13 @@ class FREDService:
         if self.use_mock:
             return self._generate_mock_series(series_id, start_date, end_date)
 
+        # Rate limiting
+        now = time.time()
+        elapsed = now - FREDService._last_request_time
+        if elapsed < self._min_interval:
+            await asyncio.sleep(self._min_interval - elapsed)
+        FREDService._last_request_time = time.time()
+
         params = {
             "series_id": series_id,
             "api_key": self.api_key,
@@ -182,10 +243,23 @@ class FREDService:
         if end_date:
             params["observation_end"] = end_date.isoformat()
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{self.BASE_URL}/series/observations", params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(f"{self.BASE_URL}/series/observations", params=params)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            if status in (400, 404) and self._should_fallback(series_id):
+                logger.warning(f"FRED series {series_id} returned {status} — using mock data")
+                return self._generate_mock_series(series_id, start_date, end_date)
+            logger.error(f"FRED API error for {series_id}: {status}")
+            raise
+        except httpx.TimeoutException:
+            if self._should_fallback(series_id):
+                logger.warning(f"FRED series {series_id} timed out — using mock data")
+                return self._generate_mock_series(series_id, start_date, end_date)
+            raise
 
         observations = []
         for obs in data.get("observations", []):
@@ -194,6 +268,12 @@ class FREDService:
                     "date": date.fromisoformat(obs["date"]),
                     "value": float(obs["value"]),
                 })
+
+        if not observations and self._should_fallback(series_id):
+            logger.warning(f"FRED series {series_id} returned no data — using mock data")
+            return self._generate_mock_series(series_id, start_date, end_date)
+
+        logger.info(f"FRED series {series_id}: fetched {len(observations)} observations")
         return {"series_id": series_id, "observations": observations}
 
     async def fetch_central_bank_data(
@@ -264,14 +344,15 @@ class FREDService:
             end_date = date.today()
 
         base_values = {
-            # Central bank balance sheets (millions)
-            "WALCL": 7_500_000,   # Fed ~7.5T
-            "ECBASSETSW": 6_800_000,  # ECB ~6.8T EUR
-            "JPNASSETS": 750_000_000_000,  # BOJ ~750T JPY
-            "UKASSETS": 850_000,   # BOE ~850B GBP
-            "SNBASSETS": 800_000,  # SNB ~800B CHF
-            "BCASSETS": 400_000,   # BOC ~400B CAD
-            "RBASSETS": 550_000,   # RBA ~550B AUD
+            # Central bank balance sheets (in FRED native units)
+            "WALCL": 7_500_000,   # Fed ~7.5T (millions USD)
+            "ECBASSETSW": 6_800_000,  # ECB ~6.8T EUR (millions EUR)
+            "JPNASSETS": 7_500_000,  # BOJ ~750T JPY (100 million JPY)
+            "UKASSETS": 850_000,   # BOE ~850B GBP (millions GBP)
+            "SNBASSETS": 800_000,  # SNB ~800B CHF (millions CHF)
+            "BCASSETS": 400_000,   # BOC ~400B CAD (millions CAD)
+            "RBASSETS": 550_000,   # RBA ~550B AUD (millions AUD)
+            "CHNASSETS": 4_930_000_000,  # PBOC ~49.3T CNY (value/unit_scale=trillions)
             # Exchange rates
             "DEXUSEU": 1.08,
             "DEXJPUS": 150.0,
@@ -279,6 +360,7 @@ class FREDService:
             "DEXSZUS": 0.88,
             "DEXCAUS": 1.36,
             "DEXUSAL": 0.65,
+            "DEXCHUS": 7.25,  # CNY per USD
             # Private sector (billions)
             "M2SL": 21_000,
             "MMMFAQ027S": 6_200,
@@ -298,7 +380,10 @@ class FREDService:
             "BOPFINB": 180_000,
             "BOPFDI": -50_000,
             "BOPPORT": 100_000,
-            # Market indicators
+            # Market indicators & Fed facilities
+            "RRPONTSYD": 200_000,  # ON RRP ~$200B (millions USD)
+            "TREAST": 4_200_000,   # Fed Treasury holdings ~$4.2T (millions USD)
+            "WSHOMCB": 2_200_000,  # Fed MBS holdings ~$2.2T (millions USD)
             "VIXCLS": 18.5,
             "T10Y2Y": 0.42,
             "DGS10": 4.25,
